@@ -1,0 +1,236 @@
+Task 1
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int fd, result;
+    size_t size;
+    char restr[14];
+    char name[] = "aaa.fifo";
+    umask(0);
+    if (mknod(name, S_IFIFO | 0666, 0) < 0) {
+        printf("Can't create FIFO!\n");
+        exit(-1);
+    }
+    if ((result = fork()) < 0) {
+        printf("Can't fork child!\n");
+        exit(-1);
+    }
+    else if (result > 0) {
+        if ((fd = open(name, O_WRONLY)) < 0) {
+            printf("Can't open FIFO for writing!\n");
+            exit(-1);
+        }
+        size = write(fd, "Hello, world!", 14);
+        if (size != 14) {
+            printf("Can't write all string to FIFO!\n");
+            exit(-1);
+        }
+        close(fd);
+        printf("Parent exit!\n");
+    }
+    else {
+        if ((fd = open(name, O_RDONLY)) < 0) {
+            printf("Can't open FIFO for reading!\n");
+            exit(-1);
+        }
+        size = read(fd, restr, 14);
+        if (size < 0) {
+            printf("Can't read string!\n");
+            exit(-1);
+        }
+        printf("%s\n", restr);
+        close(fd);
+    }
+    return 0;
+}
+
+
+Task 2  1 writer.c #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_NAME "/tmp/my_fifo"
+
+int main() {
+    int fd;
+    char buffer[256];
+    
+    if (access(FIFO_NAME, F_OK) == -1) {
+        if (mkfifo(FIFO_NAME, 0666) == -1) {
+            perror("mkfifo failed");
+            exit(EXIT_FAILURE);
+        }
+        printf("FIFO created: %s\n", FIFO_NAME);
+    }
+    
+    printf("Opening FIFO for writing...\n");
+    fd = open(FIFO_NAME, O_WRONLY);
+    if (fd == -1) {
+        perror("open failed");
+        exit(EXIT_FAILURE);
+    }
+    
+    printf("FIFO opened for writing. Enter messages (type 'exit' to quit):\n");
+    
+    while (1) {
+        printf("> ");
+        fgets(buffer, sizeof(buffer), stdin);
+        
+        buffer[strcspn(buffer, "\n")] = 0;
+        
+        if (write(fd, buffer, strlen(buffer) + 1) == -1) {
+            perror("write failed");
+            break;
+        }
+        
+        if (strcmp(buffer, "exit") == 0) {
+            break;
+        }
+    }
+    
+    close(fd);
+    printf("Writer finished.\n");
+    return 0;
+}  2	reader.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_NAME "/tmp/my_fifo"
+
+int main() {
+    int fd;
+    char buffer[256];
+    int bytes_read;
+    
+    if (access(FIFO_NAME, F_OK) == -1) {
+        printf("FIFO doesn't exist. Run writer first.\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    printf("Opening FIFO for reading...\n");
+    fd = open(FIFO_NAME, O_RDONLY);
+    if (fd == -1) {
+        perror("open failed");
+        exit(EXIT_FAILURE);
+    }
+    
+    printf("FIFO opened for reading. Waiting for messages...\n");
+    
+    while (1) {
+        bytes_read = read(fd, buffer, sizeof(buffer));
+        if (bytes_read == -1) {
+            perror("read failed");
+            break;
+        }
+        
+        if (bytes_read > 0) {
+            printf("Received: %s\n", buffer);
+            
+            if (strcmp(buffer, "exit") == 0) {
+                break;
+            }
+        }
+    }
+    
+    close(fd);
+    printf("Reader finished.\n");
+    
+    unlink(FIFO_NAME);
+    return 0;
+}
+	  Task 3 1 #include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define FIFO_NAME "myfifo"
+#define BUFFER_SIZE 1024
+
+int main() {
+    int fifo_fd;
+    unsigned char buffer[BUFFER_SIZE];
+
+    fifo_fd = open(FIFO_NAME, O_RDONLY);
+    if (fifo_fd < 0) {
+        perror("Не вдалося відкрити FIFO на читання");
+        exit(1);
+    }
+
+    ssize_t bytesRead = read(fifo_fd, buffer, BUFFER_SIZE);
+    close(fifo_fd);
+
+    if (bytesRead <= 0) {
+        perror("Помилка читання з FIFO");
+        exit(1);
+    }
+
+    FILE *fp = fopen("myfile2", "wb");
+    if (!fp) {
+        perror("Не вдалося створити myfile2");
+        exit(1);
+    }
+
+    fwrite(buffer, 1, bytesRead, fp);
+    fclose(fp);
+
+    printf("Дані прочитані з FIFO та записані у myfile2.\n");
+    return 0;
+}
+
+  2 #include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define FIFO_NAME "myfifo"
+#define BUFFER_SIZE 1024
+
+int main() {
+    int fifo_fd;
+    unsigned char buffer[BUFFER_SIZE];
+
+    if (mkfifo(FIFO_NAME, 0666) == -1) {
+    }
+
+    FILE *fp = fopen("myfile1", "rb");
+    if (!fp) {
+        perror("Не вдалося відкрити myfile1");
+        exit(1);
+    }
+
+    size_t bytesRead = fread(buffer, 1, BUFFER_SIZE, fp);
+    fclose(fp);
+
+    if (bytesRead != BUFFER_SIZE) {
+        fprintf(stderr, "Файл myfile1 повинен мати рівно 1024 байти!\n");
+        exit(1);
+    }
+
+    fifo_fd = open(FIFO_NAME, O_WRONLY);
+    if (fifo_fd < 0) {
+        perror("Не вдалося відкрити FIFO на запис");
+        exit(1);
+    }
+
+    write(fifo_fd, buffer, BUFFER_SIZE);
+    close(fifo_fd);
+
+    printf("Дані записані у FIFO.\n");
+    return 0;
+}
+
