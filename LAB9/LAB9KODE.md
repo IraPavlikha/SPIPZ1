@@ -1,0 +1,343 @@
+**Task 1**
+
+### programA.c
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int semid;
+    char pathname[]="07-1a.c";
+    key_t key;
+    struct sembuf mybuf;
+
+    if((key=ftok(pathname, 0))<0) { printf("Can't generate key!\n"); exit(-1); }
+    if((semid = semget(key, 1, 0666 | IPC_CREAT)) < 0) { printf("Can't get semid!\n"); exit(-1); }
+
+    mybuf.sem_op=-1;
+    mybuf.sem_flg=0;
+    mybuf.sem_num=0;
+    if(semop(semid, &mybuf, 1)<0) { printf("Can't wait for condition!\n"); exit(-1); }
+
+    printf("Condition is present.\n");
+    return 0;
+}
+```
+
+### programB.c
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int semid;
+    char pathname[]="07-1a.c";
+    key_t key;
+    struct sembuf mybuf;
+
+    if((key=ftok(pathname, 0))<0) { printf("Can't generate key!\n"); exit(-1); }
+    if((semid = semget(key, 1, 0666 | IPC_CREAT)) < 0) { printf("Can't get semid!\n"); exit(-1); }
+
+    mybuf.sem_op=1;
+    mybuf.sem_flg=0;
+    mybuf.sem_num=0;
+    if(semop(semid, &mybuf, 1)<0) { printf("Can't signal condition!\n"); exit(-1); }
+
+    printf("Condition is set.\n");
+    return 0;
+}
+```
+
+---
+
+**Task 2**
+
+### programA.c
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int semid;
+    char pathname[]="07-1a.c";
+    key_t key;
+    struct sembuf mybuf;
+
+    if((key=ftok(pathname, 0))<0) { printf("Can't generate key!\n"); exit(-1); }
+    if((semid = semget(key, 1, 0666 | IPC_CREAT)) < 0) { printf("Can't get semid!\n"); exit(-1); }
+
+    mybuf.sem_op=-5;
+    mybuf.sem_flg=0;
+    mybuf.sem_num=0;
+    if(semop(semid, &mybuf, 1)<0) { printf("Can't wait for condition!\n"); exit(-1); }
+
+    printf("Condition is present after at least 5 runs of ProgramB.\n");
+    return 0;
+}
+```
+
+### programB.c
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int semid;
+    char pathname[]="07-1a.c";
+    key_t key;
+    struct sembuf mybuf;
+
+    if((key=ftok(pathname, 0))<0) { printf("Can't generate key!\n"); exit(-1); }
+    if((semid = semget(key, 1, 0666 | IPC_CREAT)) < 0) { printf("Can't get semid!\n"); exit(-1); }
+
+    mybuf.sem_op=1;
+    mybuf.sem_flg=0;
+    mybuf.sem_num=0;
+    if(semop(semid, &mybuf, 1)<0) { printf("Can't signal condition!\n"); exit(-1); }
+
+    printf("ProgramB run: semaphore incremented by 1.\n");
+    return 0;
+}
+```
+
+---
+
+**Task 3**
+
+### process1.c
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
+#include <string.h>
+
+#define SHM_SIZE 1024
+
+int main() {
+    int shmid, semid;
+    char *shared_memory;
+    key_t key = 1234;
+    struct sembuf sem_op;
+
+    if ((semid = semget(key, 1, 0666 | IPC_CREAT | IPC_EXCL)) == -1) {
+        if (errno == EEXIST) {
+            semid = semget(key, 1, 0666);
+        } else {
+            perror("semget");
+            exit(1);
+        }
+    } else {
+        semctl(semid, 0, SETVAL, 1);
+    }
+
+    if ((shmid = shmget(key, SHM_SIZE, 0666 | IPC_CREAT)) == -1) {
+        perror("shmget");
+        exit(1);
+    }
+
+    if ((shared_memory = shmat(shmid, NULL, 0)) == (char *) -1) {
+        perror("shmat");
+        exit(1);
+    }
+
+    for (int i = 0; i < 5; i++) {
+        sem_op.sem_num = 0;
+        sem_op.sem_op = -1;
+        sem_op.sem_flg = 0;
+        semop(semid, &sem_op, 1);
+
+        sprintf(shared_memory, "Message %d from Process 1", i);
+        printf("Process 1: wrote '%s'\n", shared_memory);
+
+        sem_op.sem_num = 0;
+        sem_op.sem_op = 1;
+        sem_op.sem_flg = 0;
+        semop(semid, &sem_op, 1);
+
+        sleep(1);
+    }
+
+    shmdt(shared_memory);
+    return 0;
+}
+```
+
+### process2.c
+```c
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
+#include <string.h>
+
+#define SHM_SIZE 1024
+
+int main() {
+    int shmid, semid;
+    char *shared_memory;
+    key_t key = 1234;
+    struct sembuf sem_op;
+
+    if ((semid = semget(key, 1, 0666)) == -1) {
+        perror("semget");
+        exit(1);
+    }
+
+    if ((shmid = shmget(key, SHM_SIZE, 0666)) == -1) {
+        perror("shmget");
+        exit(1);
+    }
+
+    if ((shared_memory = shmat(shmid, NULL, 0)) == (char *) -1) {
+        perror("shmat");
+        exit(1);
+    }
+
+    for (int i = 0; i < 5; i++) {
+        sem_op.sem_num = 0;
+        sem_op.sem_op = -1;
+        sem_op.sem_flg = 0;
+        semop(semid, &sem_op, 1);
+
+        printf("Process 2: read '%s'\n", shared_memory);
+
+        sem_op.sem_num = 0;
+        sem_op.sem_op = 1;
+        sem_op.sem_flg = 0;
+        semop(semid, &sem_op, 1);
+
+        sleep(1);
+    }
+
+    shmdt(shared_memory);
+
+    semctl(semid, 0, IPC_RMID);
+    shmctl(shmid, IPC_RMID, NULL);
+
+    return 0;
+}
+```
+
+---
+
+**Task 4**
+
+### parent_child_pipe.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <sys/wait.h>
+#include <string.h>
+
+#define MAX_MSG_SIZE 100
+
+void sem_wait(int semid, int sem_num) {
+    struct sembuf sb = {sem_num, -1, 0};
+    semop(semid, &sb, 1);
+}
+
+void sem_signal(int semid, int sem_num) {
+    struct sembuf sb = {sem_num, 1, 0};
+    semop(semid, &sb, 1);
+}
+
+int main() {
+    int pipe1[2];
+    int pipe2[2];
+    int semid;
+    pid_t pid;
+    char message[MAX_MSG_SIZE];
+    
+    if (pipe(pipe1) == -1 || pipe(pipe2) == -1) {
+        perror("pipe");
+        exit(1);
+    }
+    
+    key_t key = ftok(".", 'S');
+    if ((semid = semget(key, 2, 0666 | IPC_CREAT)) == -1) {
+        perror("semget");
+        exit(1);
+    }
+    
+    semctl(semid, 0, SETVAL, 1);
+    semctl(semid, 1, SETVAL, 0);
+    
+    pid = fork();
+    
+    if (pid == -1) {
+        perror("fork");
+        exit(1);
+    }
+    
+    if (pid == 0) {
+        close(pipe1[1]);
+        close(pipe2[0]);
+        
+        for (int i = 0; i < 5; i++) {
+            sem_wait(semid, 1);
+            
+            read(pipe1[0], message, MAX_MSG_SIZE);
+            printf("Child received: %s\n", message);
+            
+            snprintf(message, MAX_MSG_SIZE, "Response %d from child", i);
+            write(pipe2[1], message, strlen(message) + 1);
+            printf("Child sent: %s\n", message);
+            
+            sem_signal(semid, 0);
+        }
+        
+        close(pipe1[0]);
+        close(pipe2[1]);
+        exit(0);
+    } else {
+        close(pipe1[0]);
+        close(pipe2[1]);
+        
+        for (int i = 0; i < 5; i++) {
+            sem_wait(semid, 0);
+            
+            snprintf(message, MAX_MSG_SIZE, "Message %d from parent", i);
+            write(pipe1[1], message, strlen(message) + 1);
+            printf("Parent sent: %s\n", message);
+            
+            sem_signal(semid, 1);
+            
+            read(pipe2[0], message, MAX_MSG_SIZE);
+            printf("Parent received: %s\n", message);
+        }
+        
+        close(pipe1[1]);
+        close(pipe2[0]);
+        
+        wait(NULL);
+        semctl(semid, 0, IPC_RMID);
+    }
+    
+    return 0;
+}
+```
