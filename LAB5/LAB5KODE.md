@@ -1,0 +1,138 @@
+**Task 1**
+
+### pipe_simple.c
+```c
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int fd[2];
+    size_t size;
+    char string[] = "Hello, world!";
+    char resstring[14];
+
+    if(pipe(fd) < 0) {
+        printf("Can't create pipe!\n");
+        exit(-1);
+    }
+
+    size = write(fd[1], string, 14);
+    if(size != 14) {
+        printf("Can't write all string!\n");
+        exit(-1);
+    }
+
+    size = read(fd[0], resstring, 14);
+    if(size < 0) {
+        printf("Can't read string!\n");
+        exit(-1);
+    }
+
+    printf("%s\n", resstring);
+
+    if(close(fd[0]) < 0 || close(fd[1]) < 0) {
+        printf("Can't close pipe!\n");
+    }
+
+    return 0;
+}
+```
+
+---
+
+**Task 2**
+
+### pipe_fork.c
+```c
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int fd[2], result;
+    size_t size;
+    char resstring[14];
+
+    if(pipe(fd) < 0) {
+        printf("Can't create pipe!\n");
+        exit(-1);
+    }
+
+    if((result = fork()) < 0) {
+        printf("Can't fork child!\n");
+        exit(-1);
+    } else if(result > 0) {
+        close(fd[0]);
+        size = write(fd[1], "Hello, world!", 14);
+        if(size != 14) {
+            printf("Can't write all string!\n");
+            exit(-1);
+        }
+        close(fd[1]);
+        printf("Parents exit!\n");
+    } else {
+        close(fd[1]);
+        size = read(fd[0], resstring, 14);
+        if(size < 0) {
+            printf("Can't read string!\n");
+            exit(-1);
+        }
+        printf("%s\n", resstring);
+        close(fd[0]);
+    }
+
+    return 0;
+}
+```
+
+---
+
+**Task 3**
+
+### pipe_two_way.c
+```c
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int fd1[2], fd2[2], result;
+    size_t size;
+    char parent_msg[] = "Hello, child!";
+    char child_msg[] = "Hello, parent!";
+    char buf[20];
+
+    if(pipe(fd1) < 0 || pipe(fd2) < 0) {
+        printf("Can't create pipes!\n");
+        exit(-1);
+    }
+
+    if((result = fork()) < 0) {
+        printf("Can't fork child!\n");
+        exit(-1);
+    } else if(result > 0) {
+        close(fd1[0]);
+        close(fd2[1]);
+        write(fd1[1], parent_msg, 13);
+        read(fd2[0], buf, 13);
+        printf("%s\n", buf);
+        close(fd1[1]);
+        close(fd2[0]);
+    } else {
+        close(fd1[1]);
+        close(fd2[0]);
+        read(fd1[0], buf, 13);
+        printf("%s\n", buf);
+        write(fd2[1], child_msg, 13);
+        close(fd1[0]);
+        close(fd2[1]);
+    }
+
+    return 0;
+}
+```
+
