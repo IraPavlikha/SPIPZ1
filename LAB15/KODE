@@ -1,0 +1,474 @@
+Task 1 Task 1 (сервер та клієнт)
+Сервер створює TCP-сокет (socket(AF_INET, SOCK_STREAM, 0)), прив’язує його до порту 51000 (bind), переходить у пасивний режим (listen) та обробляє підключення (accept) послідовно.
+Клієнт підключається до сервера (connect) на порт 51000, надсилає повідомлення та отримує echo (write + read).
+Вимоги завдання про прості TCP-сервер і TCP-клієнт виконані.
+ server  #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+int main()
+{
+    int listenfd, connfd, n;
+    struct sockaddr_in servaddr;
+    char buffer[1024];
+
+    if((listenfd = socket(PF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("socket");
+        exit(1);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(51000);
+
+    if(bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("bind");
+        close(listenfd);
+        exit(1);
+    }
+
+    if(listen(listenfd, 5) < 0)
+    {
+        perror("listen");
+        close(listenfd);
+        exit(1);
+    }
+
+    printf("TCP Echo Server started on port 51000...\n");
+
+    while(1)
+    {
+        if((connfd = accept(listenfd, (struct sockaddr*)NULL, NULL)) < 0)
+        {
+            perror("accept");
+            continue;
+        }
+
+        while((n = read(connfd, buffer, sizeof(buffer)-1)) > 0)
+        {
+            buffer[n] = '\0';
+            printf("Received: %s", buffer);
+
+            if(write(connfd, buffer, n) < 0)
+            {
+                perror("write");
+                break;
+            }
+        }
+
+        close(connfd);
+    }
+
+    close(listenfd);
+    return 0;
+}
+
+  client  #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main(int argc, char **argv)
+{
+    int sockfd, n, i;
+    char sendline[1000], recvline[1000];
+    struct sockaddr_in servaddr;
+
+    if(argc != 2)
+    {
+        printf("Usage: %s <IP-address>\n", argv[0]);
+        exit(1);
+    }
+
+    bzero(sendline, sizeof(sendline));
+    bzero(recvline, sizeof(recvline));
+
+    if((sockfd = socket(PF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("socket");
+        exit(1);
+    }
+
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(51000);  // порт TCP
+    if(inet_aton(argv[1], &servaddr.sin_addr) == 0)
+    {
+        printf("Invalid IP-address!\n");
+        close(sockfd);
+        exit(1);
+    }
+
+    if(connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("connect");
+        close(sockfd);
+        exit(1);
+    }
+
+    for(i = 0; i < 3; i++)
+    {
+        printf("string=>");
+        fgets(sendline, sizeof(sendline), stdin);
+
+        if(write(sockfd, sendline, strlen(sendline)) < 0)
+        {
+            perror("write");
+            close(sockfd);
+            exit(1);
+        }
+
+        if((n = read(sockfd, recvline, sizeof(recvline)-1)) < 0)
+        {
+            perror("read");
+            close(sockfd);
+            exit(1);
+        }
+
+        recvline[n] = '\0';
+        printf("%s", recvline);
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+  Task 2 Task 2 (TCP-клієнт з портом 51000)
+Модифікація клієнта з порту 7 на порт 51000.
+Підключення до сервера на цьому порту та обмін повідомленнями відбувається коректно.
+Відповідає завданню.
+ client #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+int main(int argc, char **argv)
+{
+    int sockfd, n;
+    char sendline[1024], recvline[1024];
+    struct sockaddr_in servaddr;
+
+    if(argc != 2)
+    {
+        printf("Usage: %s <ServerIP>\n", argv[0]);
+        exit(1);
+    }
+
+    sockfd = socket(PF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0)
+    {
+        perror("socket");
+        exit(1);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(51000);
+
+    if(inet_aton(argv[1], &servaddr.sin_addr) == 0)
+    {
+        printf("Invalid IP address\n");
+        close(sockfd);
+        exit(1);
+    }
+
+    if(connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("connect");
+        close(sockfd);
+        exit(1);
+    }
+
+    printf("Enter message: ");
+    fgets(sendline, sizeof(sendline), stdin);
+
+    if(write(sockfd, sendline, strlen(sendline)) < 0)
+    {
+        perror("write");
+        close(sockfd);
+        exit(1);
+    }
+
+    n = read(sockfd, recvline, sizeof(recvline)-1);
+    if(n < 0)
+    {
+        perror("read");
+        close(sockfd);
+        exit(1);
+    }
+
+    recvline[n] = '\0';
+    printf("Echo from server: %s\n", recvline);
+
+    close(sockfd);
+    return 0;
+}
+
+ server #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+int main()
+{
+    int sockfd, newsockfd, n;
+    struct sockaddr_in servaddr, cliaddr;
+    socklen_t clilen;
+    char line[1024];
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0)
+    {
+        perror("socket");
+        exit(1);
+    }
+
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(51000);
+
+    if(bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("bind");
+        close(sockfd);
+        exit(1);
+    }
+
+    if(listen(sockfd, 5) < 0)
+    {
+        perror("listen");
+        close(sockfd);
+        exit(1);
+    }
+
+    printf("TCP Server started on port 51000...\n");
+
+    while(1)
+    {
+        clilen = sizeof(cliaddr);
+        newsockfd = accept(sockfd, (struct sockaddr*)&cliaddr, &clilen);
+        if(newsockfd < 0)
+        {
+            perror("accept");
+            continue;
+        }
+
+        while((n = read(newsockfd, line, sizeof(line)-1)) > 0)
+        {
+            line[n] = '\0';
+            if(write(newsockfd, line, n) < 0)
+            {
+                perror("write");
+                break;
+            }
+        }
+
+        if(n < 0)
+            perror("read");
+
+        close(newsockfd);
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+Сервер (TCP)
+Використовує socket(AF_INET, SOCK_STREAM, 0) — створює TCP-сокет.
+Прив’язує сокет до порту 51000 (bind).
+Переводить сокет у пасивний режим (listen).
+Приймає підключення від клієнта (accept).
+Читає дані від клієнта і відразу відправляє їх назад (echo) через той же сокет (write).
+Закриває підключення після завершення обміну.
+Сервер працює у нескінченному циклі для обслуговування нових клієнтів.
+Клієнт (TCP)
+Створює TCP-сокет.
+Підключається до сервера на порт 51000 (connect).
+Зчитує повідомлення з клавіатури (fgets).
+Відправляє його на сервер (write) і отримує echo (read).
+Друкує echo на екран клієнта.
+Особливості
+Використовується буфер 1024 байти (char sendline[1024], recvline[1024]), що відповідає завданню 4.
+Сервер та клієнт можуть працювати на різних терміналах або комп’ютерах.
+Додано обробку помилок (perror), закриття сокетів.
+
+Task 3 Task 3 (TCP-клієнт, порт 51000)
+Це практично ідентичний клієнт до Task 2, але підкреслює, що порт змінений з 7 на 51000.
+Відповідає завданню 6 (модифікація номера порту для тестування на іншому комп’ютері/віртуальній машині).
+ client #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+int main(int argc, char **argv)
+{
+    int sockfd, n;
+    char sendline[1024], recvline[1024];
+    struct sockaddr_in servaddr;
+
+    if(argc != 2)
+    {
+        printf("Usage: %s <ServerIP>\n", argv[0]);
+        exit(1);
+    }
+
+    sockfd = socket(PF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0) { perror("socket"); exit(1); }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(51000);  // Порт змінено з 7 на 51000
+
+    if(inet_aton(argv[1], &servaddr.sin_addr) == 0)
+    {
+        printf("Invalid IP address\n");
+        close(sockfd);
+        exit(1);
+    }
+
+    if(connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("connect");
+        close(sockfd);
+        exit(1);
+    }
+
+    printf("Enter message: ");
+    fgets(sendline, sizeof(sendline), stdin);
+
+    if(write(sockfd, sendline, strlen(sendline)) < 0) { perror("write"); close(sockfd); exit(1); }
+
+    n = read(sockfd, recvline, sizeof(recvline)-1);
+    if(n < 0) { perror("read"); close(sockfd); exit(1); }
+
+    recvline[n] = '\0';
+    printf("Echo from server: %s\n", recvline);
+
+    close(sockfd);
+    return 0;
+}
+
+ Task 4 Task 4 (паралельний сервер)
+Сервер використовує fork() для псевдопаралельної обробки клієнтів.
+Дочірній процес обробляє клієнта, батьківський процес закриває приєднаний сокет та чекає нових підключень.
+Використано signal(SIGCHLD, sigchld_handler) і waitpid(..., WNOHANG) для видалення зомбі-процесів.
+Відповідає вимогам завдання 7 (паралельна обробка).
+і server #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <signal.h>
+#include <arpa/inet.h>
+#include <sys/wait.h>
+
+#define PORT 51000
+#define BUF_SIZE 1024
+
+void handle_client(int sockfd) {
+    char buf[BUF_SIZE];
+    int n;
+    while ((n = read(sockfd, buf, BUF_SIZE-1)) > 0) {
+        buf[n] = '\0';
+        printf("Received from client: %s", buf);
+        if (write(sockfd, buf, n) < 0) {
+            perror("write");
+            break;
+        }
+    }
+    if (n < 0) perror("read");
+    close(sockfd);
+    exit(0);
+}
+
+void sigchld_handler(int sig) {
+    while(waitpid(-1, NULL, WNOHANG) > 0);
+}
+
+int main() {
+    int sockfd, newsockfd;
+    struct sockaddr_in servaddr, cliaddr;
+    socklen_t clilen;
+
+    signal(SIGCHLD, sigchld_handler);
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) { perror("socket"); exit(1); }
+
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(PORT);
+
+    if (bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {
+        perror("bind"); close(sockfd); exit(1);
+    }
+
+    if (listen(sockfd, 5) < 0) {
+        perror("listen"); close(sockfd); exit(1);
+    }
+
+    printf("TCP Server started on port %d...\n", PORT);
+
+    while (1) {
+        clilen = sizeof(cliaddr);
+        newsockfd = accept(sockfd, (struct sockaddr*)&cliaddr, &clilen);
+        if (newsockfd < 0) {
+            perror("accept"); continue;
+        }
+
+        if (fork() == 0) { 
+           close(sockfd); 
+           handle_client(newsockfd);
+        } else {
+            close(newsockfd);
+        }
+    }
+
+    close(sockfd);
+    return 0;
+}
+
+  Паралельна обробка клієнтів:
+Після прийому з’єднання (accept) сервер викликає fork().
+Дочірній процес обробляє конкретного клієнта (handle_client) і завершується після закриття з’єднання.
+Батьківський процес закриває приєднаний сокет і знову чекає на нові підключення.
+Видалення зомбі-процесів:
+Використано signal(SIGCHLD, sigchld_handler) і waitpid з WNOHANG, щоб прибирати завершені дочірні процеси.
+Псевдопаралельна робота:
+Батьківський процес не блокується на одному клієнті.
+Кілька клієнтів можуть одночасно підключатись і отримувати ехо відповідь.
+Функціональність ехо-сервера:
+Сервер читає повідомлення клієнта (read) і відправляє його назад (write).
+Друкує повідомлення на екран для контролю.
