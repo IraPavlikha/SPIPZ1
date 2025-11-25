@@ -1,0 +1,203 @@
+**Task 1**
+
+### pthread_example.c
+```c
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int a = 0;
+
+void *mythread(void *dummy) {
+    pthread_t mythid;
+    mythid = pthread_self();
+    a = a + 1;
+    printf("Thread %lu, calculation result = %d\n", (unsigned long)mythid, a);
+    return NULL;
+}
+
+int main() {
+    pthread_t thid, mythid;
+    int result;
+
+    result = pthread_create(&thid, NULL, mythread, NULL);
+    if (result != 0) {
+        printf("Error on thread create, return value = %d\n", result);
+        exit(-1);
+    }
+
+    printf("Thread created, thid = %lu\n", (unsigned long)thid);
+
+    mythid = pthread_self();
+    a = a + 1;
+    printf("Thread %lu, calculation result = %d\n", (unsigned long)mythid, a);
+
+    pthread_join(thid, NULL);
+    return 0;
+}
+```
+
+---
+
+**Task 2**
+
+### program1.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <semaphore.h>
+
+#define SHM_NAME "/my_shared_memory"
+#define SEM_NAME "/my_shared_sem"
+
+int main() {
+    int fd;
+    int new = 0;
+    sem_t *sem;
+
+    sem = sem_open(SEM_NAME, O_CREAT, 0666, 1);
+    if (sem == SEM_FAILED) {
+        perror("sem_open");
+        exit(1);
+    }
+
+    fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+    if (fd == -1) {
+        perror("shm_open");
+        exit(1);
+    }
+
+    ftruncate(fd, sizeof(int) * 3);
+
+    int *array = mmap(NULL, sizeof(int) * 3, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (array == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+
+    sem_wait(sem);
+
+    if (array[2] == 0) {
+        array[0] = 1;
+        array[1] = 0;
+        array[2] = 1;
+    } else {
+        array[0] += 1;
+        for (long i = 0; i < 200000000L; i++);
+        array[2] += 1;
+    }
+
+    printf("Program1: P1=%d  P2=%d  TOTAL=%d\n", array[0], array[1], array[2]);
+
+    sem_post(sem);
+
+    munmap(array, sizeof(int) * 3);
+    close(fd);
+
+    return 0;
+}
+```
+
+### program2.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <semaphore.h>
+
+#define SHM_NAME "/my_shared_memory"
+#define SEM_NAME "/my_shared_sem"
+
+int main() {
+    int fd;
+    sem_t *sem;
+
+    sem = sem_open(SEM_NAME, O_CREAT, 0666, 1);
+    if (sem == SEM_FAILED) {
+        perror("sem_open");
+        exit(1);
+    }
+
+    fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
+    if (fd == -1) {
+        perror("shm_open");
+        exit(1);
+    }
+
+    int *array = mmap(NULL, sizeof(int) * 3, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (array == MAP_FAILED) {
+        perror("mmap");
+        exit(1);
+    }
+
+    sem_wait(sem);
+
+    array[1] += 1;
+    for (long i = 0; i < 200000000L; i++);
+    array[2] += 1;
+
+    printf("Program2: P1=%d  P2=%d  TOTAL=%d\n", array[0], array[1], array[2]);
+
+    sem_post(sem);
+
+    munmap(array, sizeof(int) * 3);
+    close(fd);
+
+    return 0;
+}
+```
+
+---
+
+**Task 3**
+
+### pthread_multiple.c
+```c
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int a = 0;
+
+void *mythread(void *arg) {
+    long id = (long)arg;
+    pthread_t tid = pthread_self();
+    a = a + 1;
+    printf("Thread %ld (tid=%lu), result = %d\n", id, (unsigned long)tid, a);
+    return NULL;
+}
+
+int main() {
+    pthread_t th1, th2, th3;
+    int result;
+
+    if ((result = pthread_create(&th1, NULL, mythread, (void *)1)) != 0) {
+        exit(-1);
+    }
+    if ((result = pthread_create(&th2, NULL, mythread, (void *)2)) != 0) {
+        exit(-1);
+    }
+    if ((result = pthread_create(&th3, NULL, mythread, (void *)3)) != 0) {
+        exit(-1);
+    }
+
+    pthread_t main_tid = pthread_self();
+    a = a + 1;
+    printf("Main thread (tid=%lu), result = %d\n", (unsigned long)main_tid, a);
+
+    pthread_join(th1, NULL);
+    pthread_join(th2, NULL);
+    pthread_join(th3, NULL);
+
+    printf("Final value of a = %d\n", a);
+
+    return 0;
+}
+```
