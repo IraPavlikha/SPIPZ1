@@ -1,0 +1,237 @@
+# UNIX Domain Socket Tasks Documentation
+
+## Task 1 — UNIX Domain Datagram Socket (Echo)
+
+**Особливості:**
+- Сервер створює UNIX Domain датаграм-сокет (BBBB), чекає повідомлень від клієнтів через `recvfrom()`, і одразу відсилає їх назад (`sendto()`) — реалізує echo.
+- Клієнт створює свій сокет (AAAA), надсилає повідомлення серверу через `sendto()`, отримує echo через `recvfrom()` і друкує його на екран.
+- Вся взаємодія відбувається локально через файлові сокети, без використання мережі.
+- Кожне повідомлення надсилається окремим пакетом (датаграмою).
+
+### client.c
+```c
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#define CLIENT_SOCKET "AAAA"
+#define SERVER_SOCKET "BBBB"
+#define BUF_SIZE 1024
+
+int main() {
+    int sockfd, n;
+    char sendline[BUF_SIZE], recvline[BUF_SIZE];
+    struct sockaddr_un cliaddr, servaddr;
+    socklen_t servlen;
+
+    if((sockfd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) {
+        perror("socket");
+        exit(1);
+    }
+
+    unlink(CLIENT_SOCKET); 
+    memset(&cliaddr, 0, sizeof(cliaddr));
+    cliaddr.sun_family = AF_UNIX;
+    strcpy(cliaddr.sun_path, CLIENT_SOCKET);
+
+    if(bind(sockfd, (struct sockaddr*)&cliaddr, sizeof(cliaddr)) < 0) {
+        perror("bind");
+        close(sockfd);
+        exit(1);
+    }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sun_family = AF_UNIX;
+    strcpy(servaddr.sun_path, SERVER_SOCKET);
+    servlen = sizeof(servaddr);
+
+    printf("Enter message: ");
+    fgets(sendline, BUF_SIZE, stdin);
+
+    if(sendto(sockfd, sendline, strlen(sendline), 0, (struct sockaddr*)&servaddr, servlen) < 0) {
+        perror("sendto");
+        close(sockfd);
+        exit(1);
+    }
+
+    n = recvfrom(sockfd, recvline, BUF_SIZE-1, 0, NULL, NULL);
+    if(n < 0) {
+        perror("recvfrom");
+        close(sockfd);
+        exit(1);
+    }
+    recvline[n] = '\0';
+    printf("Echo from server: %s\n", recvline);
+
+    close(sockfd);
+    unlink(CLIENT_SOCKET);
+    return 0;
+}
+```
+
+### server.c
+```c
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#define SERVER_SOCKET "BBBB"
+#define BUF_SIZE 1024
+
+int main() {
+    int sockfd, n;
+    char buf[BUF_SIZE];
+    struct sockaddr_un servaddr, cliaddr;
+    socklen_t clilen;
+
+    if((sockfd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) {
+        perror("socket");
+        exit(1);
+    }
+
+    unlink(SERVER_SOCKET); 
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sun_family = AF_UNIX;
+    strcpy(servaddr.sun_path, SERVER_SOCKET);
+
+    if(bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) {
+        perror("bind");
+        close(sockfd);
+        exit(1);
+    }
+
+    printf("UNIX Domain Datagram Server started...\n");
+
+    while(1) {
+        clilen = sizeof(cliaddr);
+        n = recvfrom(sockfd, buf, BUF_SIZE-1, 0, (struct sockaddr*)&cliaddr, &clilen);
+        if(n < 0) { perror("recvfrom"); continue; }
+        buf[n] = '\0';
+        printf("Received: %s", buf);
+
+        if(sendto(sockfd, buf, n, 0, (struct sockaddr*)&cliaddr, clilen) < 0) {
+            perror("sendto");
+        }
+    }
+
+    close(sockfd);
+    unlink(SERVER_SOCKET);
+    return 0;
+}
+```
+
+---
+
+## Task 2 — UNIX Domain Stream Socket (Echo)
+
+**Особливості:**
+- Сервер створює потоковий UNIX Domain сокет (SOCK_STREAM) із локальною адресою-файлом BBBB.
+- Сервер слухає підключення (`listen`) і приймає нові підключення (`accept`).
+- Клієнт створює сокет, підключається до сервера через `connect()`.
+- Клієнт надсилає повідомлення, сервер їх читає (`read()`) і відправляє назад (`write()`) — echo.
+- Потоковий протокол забезпечує надійну доставку, можна обмінюватися даними в потоці, без обмежень на розмір пакету.
+
+### server.c
+```c
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+#define SOCKET_PATH "BBBB"
+#define BUF_SIZE 1024
+
+int main() {
+    int listenfd, connfd;
+    struct sockaddr_un servaddr, cliaddr;
+    socklen_t clilen;
+    char buf[BUF_SIZE];
+    int n;
+
+    if ((listenfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) { perror("socket"); exit(1); }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sun_family = AF_UNIX;
+    strcpy(servaddr.sun_path, SOCKET_PATH);
+
+    unlink(SOCKET_PATH);
+
+    if (bind(listenfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) { perror("bind"); close(listenfd); exit(1); }
+
+    if (listen(listenfd, 5) < 0) { perror("listen"); close(listenfd); exit(1); }
+
+    printf("UNIX Domain TCP Server started...\n");
+
+    while (1) {
+        clilen = sizeof(cliaddr);
+        connfd = accept(listenfd, (struct sockaddr*)&cliaddr, &clilen);
+        if (connfd < 0) { perror("accept"); continue; }
+
+        while ((n = read(connfd, buf, BUF_SIZE-1)) > 0) {
+            buf[n] = '\0';
+            printf("Received: %s", buf);
+            write(connfd, buf, n);
+        }
+
+        close(connfd);
+    }
+
+    close(listenfd);
+    unlink(SOCKET_PATH);
+    return 0;
+}
+```
+
+### client.c
+```c
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+#define SOCKET_PATH "BBBB"
+#define BUF_SIZE 1024
+
+int main() {
+    int sockfd, n;
+    struct sockaddr_un servaddr;
+    char sendline[BUF_SIZE], recvline[BUF_SIZE];
+
+    if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) { perror("socket"); exit(1); }
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sun_family = AF_UNIX;
+    strcpy(servaddr.sun_path, SOCKET_PATH);
+
+    if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0) { perror("connect"); close(sockfd); exit(1); }
+
+    while (1) {
+        printf("string=> ");
+        if (!fgets(sendline, BUF_SIZE, stdin)) break;
+
+        write(sockfd, sendline, strlen(sendline));
+
+        if ((n = read(sockfd, recvline, BUF_SIZE-1)) <= 0) break;
+        recvline[n] = '\0';
+        printf("Echo: %s", recvline);
+    }
+
+    close(sockfd);
+    return 0;
+}
+```
+
