@@ -1,7 +1,9 @@
 # TCP/UDP Socket Tasks Documentation
 
 ## Task 1 — TCP Echo Server and Client
-
+-Сервер створює TCP-сокет (socket(AF_INET, SOCK_STREAM, 0)), прив’язує його до порту 51000 (bind), переходить у пасивний режим (listen) та обробляє підключення (accept) послідовно.
+-Клієнт підключається до сервера (connect) на порт 51000, надсилає повідомлення та отримує echo (write + read).
+-Вимоги завдання про прості TCP-сервер і TCP-клієнт виконані.
 ### server.c
 ```c
 #include <sys/types.h>
@@ -143,6 +145,8 @@ int main(int argc, char **argv) {
 ---
 
 ## Task 2 — TCP Client (Port 51000)
+-Модифікація клієнта з порту 7 на порт 51000.
+-Підключення до сервера на цьому порту та обмін повідомленнями відбувається коректно.
 ### client.c
 ```c
 #include <sys/types.h>
@@ -195,11 +199,109 @@ int main(int argc, char **argv) {
 }
 ```
 
-### server.c — same as Task 1 (port 51000)
+### server.c
+```c
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+
+int main()
+{
+    int sockfd, newsockfd, n;
+    struct sockaddr_in servaddr, cliaddr;
+    socklen_t clilen;
+    char line[1024];
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if(sockfd < 0)
+    {
+        perror("socket");
+        exit(1);
+    }
+
+    int opt = 1;
+    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(51000);
+
+    if(bind(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("bind");
+        close(sockfd);
+        exit(1);
+    }
+
+    if(listen(sockfd, 5) < 0)
+    {
+        perror("listen");
+        close(sockfd);
+        exit(1);
+    }
+
+    printf("TCP Server started on port 51000...\n");
+
+    while(1)
+    {
+        clilen = sizeof(cliaddr);
+        newsockfd = accept(sockfd, (struct sockaddr*)&cliaddr, &clilen);
+        if(newsockfd < 0)
+        {
+            perror("accept");
+            continue;
+        }
+
+        while((n = read(newsockfd, line, sizeof(line)-1)) > 0)
+        {
+            line[n] = '\0';
+            if(write(newsockfd, line, n) < 0)
+            {
+                perror("write");
+                break;
+            }
+        }
+
+        if(n < 0)
+            perror("read");
+
+        close(newsockfd);
+    }
+
+    close(sockfd);
+    return 0;
+}
+```
+## Сервер (TCP)
+-Використовує socket(AF_INET, SOCK_STREAM, 0) — створює TCP-сокет.
+-Прив’язує сокет до порту 51000 (bind).
+-Переводить сокет у пасивний режим (listen).
+-Приймає підключення від клієнта (accept).
+-Читає дані від клієнта і відразу відправляє їх назад (echo) через той же сокет (write).
+-Закриває підключення після завершення обміну.
+-Сервер працює у нескінченному циклі для обслуговування нових клієнтів.
+
+## Клієнт (TCP)
+-Створює TCP-сокет.
+-Підключається до сервера на порт 51000 (connect).
+-Зчитує повідомлення з клавіатури (fgets).
+-Відправляє його на сервер (write) і отримує echo (read).
+-Друкує echo на екран клієнта.
+
+## Особливості
+-Використовується буфер 1024 байти (char sendline[1024], recvline[1024]), що відповідає завданню 4.
+-Сервер та клієнт можуть працювати на різних терміналах або комп’ютерах.
+-Додано обробку помилок (perror), закриття сокетів.
 
 ---
 
 ## Task 3 — TCP Client (Port 51000, modified for test)
+-  Це практично ідентичний клієнт до Task 2, але підкреслює, що порт змінений з 7 на 51000.
 **client.c**
 ```c
 #include <sys/types.h>
@@ -248,6 +350,10 @@ int main(int argc, char **argv) {
 ---
 
 ## Task 4 — Parallel TCP Server
+-Сервер використовує fork() для псевдопаралельної обробки клієнтів.
+-Дочірній процес обробляє клієнта, батьківський процес закриває приєднаний сокет та чекає нових підключень.
+-Використано signal(SIGCHLD, sigchld_handler) і waitpid(..., WNOHANG) для видалення зомбі-процесів.
+
 **server.c**
 ```c
 #include <sys/types.h>
